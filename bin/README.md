@@ -23,6 +23,19 @@ You only need to run it once after a fresh clone, or when you want to reset the 
 
 ---
 
+## Activating the virtual environment
+
+To activate the venv in your current terminal (so you can run `python`, `pip`, or scripts like `experiments\test.py`):
+
+- **Windows — PowerShell (from project root):**  
+  `. .\bin\activate.ps1`  
+  Use the leading dot and space so the script runs in your current session. Your prompt will show `(venv)`.
+
+- **macOS/Linux:**  
+  `source venv/bin/activate`
+
+---
+
 ## Control script: `ctl.py` and `ctl.bat`
 
 The control script provides a command-line interface for project tasks: running linting and tests.
