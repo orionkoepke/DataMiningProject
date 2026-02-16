@@ -56,19 +56,12 @@ class StockDataCleaner:
         if schedule.empty:
             return data.iloc[0:0].copy()
 
-        # For each unique timestamp, check if market was open (regular hours only)
-        unique_ts = timestamps.unique()
-        def is_open(t):
-            try:
-                return self._nyse.open_at_time(schedule, t, only_rth=True)
-            except ValueError:
-                return False  # not in schedule (e.g. weekend, holiday)
-
-        open_mask = pd.Series({t: is_open(t) for t in unique_ts})
-        keep_ts = open_mask[open_mask].index
-
-        # Use localized timestamps for filter so naive input still matches keep_ts
-        keep_mask = timestamps.isin(keep_ts)
+        valid_rth = rth_timestamps_from_schedule(
+            schedule, pd.Timedelta(minutes=1)
+        )
+        if valid_rth.empty:
+            return data.iloc[0:0].copy()
+        keep_mask = timestamps.isin(valid_rth)
         return data.loc[keep_mask]
 
     def _expected_timestamps(
