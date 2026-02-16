@@ -2,6 +2,8 @@
 Stock data cleaning utilities.
 """
 
+from functools import reduce
+
 import pandas as pd
 import pandas_market_calendars as mcal
 
@@ -88,26 +90,42 @@ class StockDataCleaner:
             end_ts = end_ts.tz_convert('UTC')
 
         delta = timeframe_to_timedelta(timeframe)
-        schedule = None
+        freq = pd.Timedelta(seconds=delta.total_seconds())
+
         if only_when_market_open:
             schedule = self._nyse.schedule(start_date=start_ts, end_date=end_ts)
             if schedule.empty:
                 return pd.DatetimeIndex([])
-
-        out = []
-        t = start_ts
-        while t <= end_ts:
-            if only_when_market_open:
-                try:
-                    if self._nyse.open_at_time(schedule, t, only_rth=True):
-                        out.append(t)
-                except ValueError:
-                    pass
+            # Build RTH bars in bulk: one date_range per session (no per-bar open_at_time).
+            out = []
+            for _, row in schedule.iterrows():
+                session_open = row['market_open']
+                session_close = row['market_close']
+                session_ts = pd.date_range(
+                    start=session_open,
+                    end=session_close,
+                    freq=freq,
+                    inclusive='both',
+                )
+                out.append(session_ts)
+            if not out:
+                return pd.DatetimeIndex([])
+            combined = reduce(lambda a, b: a.union(b), out)
+            # Convert to UTC and clip to requested range
+            if combined.tz is not None:
+                combined = combined.tz_convert('UTC')
             else:
-                out.append(t)
-            t = t + delta
-
-        return pd.DatetimeIndex(out) if out else pd.DatetimeIndex([])
+                combined = combined.tz_localize('UTC')
+            mask = (combined >= start_ts) & (combined <= end_ts)
+            return combined[mask]
+        else:
+            out = pd.date_range(
+                start=start_ts,
+                end=end_ts,
+                freq=freq,
+                inclusive='both',
+            )
+            return out
 
     def forward_propagate(
         self,
