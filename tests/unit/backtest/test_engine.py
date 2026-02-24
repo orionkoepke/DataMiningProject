@@ -49,7 +49,7 @@ class TestBacktestEngine(unittest.TestCase):
         """Engine runs strategy; buy order is filled; portfolio and fills are correct."""
         data = _make_bars("AAPL", ["2024-01-02 14:30:00", "2024-01-03 14:30:00"], [100.0, 102.0])
         strategy = BuyOnceStrategy()
-        result = run(data, strategy, initial_cash=10_000.0, record_equity_curve=True)
+        result = run(data, strategy, initial_cash=10_000.0, record_equity_curve=True, fee_model=lambda fill: 0)
         self.assertIsInstance(result, BacktestResult)
         self.assertIsInstance(result.portfolio, Portfolio)
         self.assertEqual(result.portfolio.cash, 10_000.0 - 1000.0)
@@ -64,7 +64,41 @@ class TestBacktestEngine(unittest.TestCase):
         """Run with empty DataFrame completes without error; portfolio unchanged."""
         data = pd.DataFrame()
         strategy = BuyOnceStrategy()
-        result = run(data, strategy, initial_cash=5_000.0, record_equity_curve=False)
+        result = run(data, strategy, initial_cash=5_000.0, record_equity_curve=False, fee_model=lambda fill: 0)
         self.assertEqual(result.portfolio.cash, 5_000.0)
         self.assertEqual(len(result.portfolio.positions), 0)
         self.assertEqual(len(result.equity_curve), 0)
+
+    def test_slippage_bps_increases_buy_fill_price(self):
+        """With slippage_bps=10, buy fill price is close * (1 + 10/10000) = 100.1."""
+        data = _make_bars("AAPL", ["2024-01-02 14:30:00"], [100.0])
+        strategy = BuyOnceStrategy()
+        result = run(data, strategy, initial_cash=10_000.0, slippage_bps=10, fee_model=lambda fill: 0)
+        self.assertEqual(len(result.portfolio.trade_history), 1)
+        self.assertEqual(result.portfolio.trade_history[0].price, 100.1)
+        self.assertEqual(result.portfolio.cash, 10_000.0 - 100.1 * 10)
+
+    def test_fee_model_deducts_fee(self):
+        """Custom fee_model deducts fee; amount rounded up to cent."""
+        data = _make_bars("AAPL", ["2024-01-02 14:30:00"], [50.0])
+        strategy = BuyOnceStrategy()
+        no_fee = run(data, strategy, initial_cash=10_000.0, fee_model=lambda fill: 0)
+        # 1.09 rounds up to 1.10 (no float ambiguity)
+        with_fee = run(data, strategy, initial_cash=10_000.0, fee_model=lambda fill: 1.09)
+        self.assertEqual(no_fee.portfolio.cash, 10_000.0 - 500.0)
+        self.assertEqual(with_fee.portfolio.cash, 10_000.0 - 500.0 - 1.10)
+
+    def test_fee_rounded_up_to_cent(self):
+        """Fee 0.001 is rounded up to 0.01 before deducting."""
+        data = _make_bars("AAPL", ["2024-01-02 14:30:00"], [50.0])
+        strategy = BuyOnceStrategy()
+        result = run(data, strategy, initial_cash=10_000.0, fee_model=lambda fill: 0.001)
+        self.assertEqual(result.portfolio.cash, 10_000.0 - 500.0 - 0.01)
+
+    def test_default_alpaca_fee_deducted(self):
+        """Default fee_model deducts Alpaca regulatory fee (CAT for buy), rounded up to cent."""
+        data = _make_bars("AAPL", ["2024-01-02 14:30:00"], [50.0])
+        strategy = BuyOnceStrategy()
+        result = run(data, strategy, initial_cash=10_000.0)  # default fee_model
+        # Buy 10 shares: CAT = 0.00003 * 10 = 0.0003 -> round up 0.01
+        self.assertEqual(result.portfolio.cash, 10_000.0 - 500.0 - 0.01)

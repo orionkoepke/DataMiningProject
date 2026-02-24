@@ -6,16 +6,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING, Callable, List, Tuple
 
 import pandas as pd
 
 from lib.backtest.data_feed import DataFrameDataFeed
+from lib.backtest.fees import alpaca_regulatory_fee
 from lib.backtest.sim_broker import SimBroker
 from lib.backtest.sim_clock import SimClock
 from lib.framework.portfolio import Portfolio
 
 if TYPE_CHECKING:
+    from lib.framework.orders import Fill
     from lib.framework.strategy import Strategy
 
 
@@ -32,6 +34,8 @@ def run(
     strategy: Strategy,
     initial_cash: float = 0.0,
     record_equity_curve: bool = True,
+    slippage_bps: float = 0,
+    fee_model: Callable[["Fill"], float] | None = None,
 ) -> BacktestResult:
     """
     Run a strategy over historical bars.
@@ -41,17 +45,21 @@ def run(
         strategy: Strategy implementing next(current_time, market_snapshot, portfolio) -> list[Order].
         initial_cash: Starting cash for the portfolio.
         record_equity_curve: If True, record (time, equity) at each bar.
+        slippage_bps: Basis points to worsen fill price (buy higher, sell lower). 0 = no slippage.
+        fee_model: If None, uses Alpaca regulatory fees (TAF + CAT). Pass lambda fill: 0 for no fees.
 
     Returns:
         BacktestResult with final portfolio and optional equity_curve.
     """
+    if fee_model is None:
+        fee_model = alpaca_regulatory_fee
     feed = DataFrameDataFeed(data)
     if isinstance(data.index, pd.MultiIndex) and "timestamp" in data.index.names:
         timestamps = data.index.get_level_values("timestamp").unique()
     else:
         timestamps = data.index.tolist() if hasattr(data.index, "tolist") else []
     clock = SimClock(timestamps)
-    broker = SimBroker()
+    broker = SimBroker(slippage_bps=slippage_bps, fee_model=fee_model)
     portfolio = Portfolio(cash=initial_cash)
     results = BacktestResult(portfolio=portfolio)
 

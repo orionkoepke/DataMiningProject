@@ -2,13 +2,15 @@
 Simulated broker: holds pending orders, fills at bar close using OHLC.
 """
 
+import dataclasses
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import pandas as pd
 
+from lib.backtest.fees import round_up_to_cent
 from lib.framework.broker import Broker
-from lib.framework.orders import Fill, Order, OrderType
+from lib.framework.orders import Fill, Order, OrderSide, OrderType
 
 
 class SimBroker(Broker):
@@ -17,9 +19,15 @@ class SimBroker(Broker):
     Call set_current_bars(snapshot) before get_fills() so the broker has price and time.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        slippage_bps: float = 0,
+        fee_model: Optional[Callable[[Fill], float]] = None,
+    ) -> None:
         self._pending: List[Tuple[Order, str]] = []  # (order, assigned_order_id)
         self._next_id = 0
+        self._slippage_bps = slippage_bps
+        self._fee_model = fee_model
         self._current_bars: Optional[pd.DataFrame] = None
         self._current_time: Optional[datetime] = None
 
@@ -63,16 +71,23 @@ class SimBroker(Broker):
             if price is None:
                 still_pending.append((order, oid))
                 continue
-            fills.append(
-                Fill(
-                    order_id=oid,
-                    symbol=order.symbol,
-                    side=order.side,
-                    price=price,
-                    qty=order.qty,
-                    timestamp=self._current_time,
-                )
+            if self._slippage_bps > 0:
+                if order.side == OrderSide.BUY:
+                    price = price * (1 + self._slippage_bps / 10_000)
+                else:
+                    price = price * (1 - self._slippage_bps / 10_000)
+            fill = Fill(
+                order_id=oid,
+                symbol=order.symbol,
+                side=order.side,
+                price=price,
+                qty=order.qty,
+                timestamp=self._current_time,
+                fee=0.0,
             )
+            if self._fee_model is not None:
+                fill = dataclasses.replace(fill, fee=round_up_to_cent(self._fee_model(fill)))
+            fills.append(fill)
         self._pending = still_pending
         return fills
 

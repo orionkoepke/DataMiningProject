@@ -80,3 +80,16 @@ class TestFill(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             Fill(order_id="o1", symbol="AAPL", side="buy", price=0, qty=10, timestamp=ts)
         self.assertIn("price", str(ctx.exception))
+
+    def test_fill_fee_default_zero(self):
+        """Fill fee defaults to 0."""
+        ts = datetime(2024, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+        f = Fill(order_id="o1", symbol="AAPL", side="buy", price=100.0, qty=10, timestamp=ts)
+        self.assertEqual(f.fee, 0.0)
+
+    def test_fill_fee_cannot_be_negative(self):
+        """Fill fee cannot be negative."""
+        ts = datetime(2024, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+        with self.assertRaises(ValueError) as ctx:
+            Fill(order_id="o1", symbol="AAPL", side="buy", price=100.0, qty=10, timestamp=ts, fee=-0.01)
+        self.assertIn("fee", str(ctx.exception))

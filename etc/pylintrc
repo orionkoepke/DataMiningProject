@@ -1,5 +1,10 @@
 [FORMAT]
 max-line-length=120
 
+[DESIGN]
+max-args=10
+max-positional-arguments=10
+max-locals=25
+
 [MESSAGES CONTROL]
 disable=too-few-public-methods,no-else-return

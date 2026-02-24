@@ -48,7 +48,7 @@ class Order:
 
 @dataclass(frozen=True)
 class Fill:
-    """A fill (execution) of an order."""
+    """A fill (execution) of an order. Optional fee is deducted from cash when applied to a portfolio."""
 
     order_id: str
     symbol: str
@@ -56,9 +56,12 @@ class Fill:
     price: float
     qty: int
     timestamp: datetime
+    fee: float = 0.0
 
     def __post_init__(self) -> None:
         if self.qty <= 0:
             raise ValueError("qty must be positive")
         if self.price <= 0:
             raise ValueError("price must be positive")
+        if self.fee < 0:
+            raise ValueError("fee cannot be negative")

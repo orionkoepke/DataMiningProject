@@ -48,7 +48,7 @@ class Portfolio:
 
     def apply_fill(self, fill: Fill) -> None:
         """
-        Update positions and cash for a fill; append fill to trade_history.
+        Update positions and cash for a fill; deduct fill.fee from cash; append fill to trade_history.
         Sell quantity cannot exceed current position (no short selling).
         """
         self.trade_history.append(fill)
@@ -66,6 +66,7 @@ class Portfolio:
             new_qty = pos.quantity + fill.qty
             new_basis = pos.cost_basis + cost_delta
         self.cash -= cost_delta  # buy: cash decreases; sell: cash increases
+        self.cash -= fill.fee
         if new_qty == 0:
             self.positions.pop(fill.symbol, None)
         else:

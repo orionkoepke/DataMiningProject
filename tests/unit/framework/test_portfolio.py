@@ -58,6 +58,13 @@ class TestPortfolio(unittest.TestCase):
         self.assertEqual(len(pf.trade_history), 1)
         self.assertEqual(pf.trade_history[0], fill)
 
+    def test_apply_fill_deducts_fee_from_cash(self):
+        """Apply fill with fee: portfolio deducts fill.fee from cash."""
+        pf = Portfolio(cash=10_000.0)
+        fill = Fill(order_id="o1", symbol="AAPL", side="buy", price=100.0, qty=10, timestamp=_ts(2024, 1, 15), fee=0.50)
+        pf.apply_fill(fill)
+        self.assertEqual(pf.cash, 10_000.0 - 1000.0 - 0.50)
+
     def test_apply_fill_sell_updates_cash_and_position(self):
         """Apply sell fill: cash increases, position reduced."""
         pf = Portfolio(cash=10_000.0)
