@@ -9,6 +9,7 @@ from lib.common.common import (
     add_feature_bars_until_close,
     add_feature_pct_change,
     add_feature_pct_change_batch,
+    calculate_min_win_rate,
     create_target_column,
 )
 
@@ -607,6 +608,13 @@ class TestAddFeaturePctChangeBatch(unittest.TestCase):
         self.assertEqual(list(result.index.names), ["symbol", "timestamp"])
         pd.testing.assert_index_equal(result.index, df.index)
 
+
+class TestCalculateMinWinRate(unittest.TestCase):
+    """Tests for calculate_min_win_rate."""
+
+    def test_calculate_min_win_rate(self):
+        self.assertEqual(calculate_min_win_rate(0.04, 0.02, 0.004), 0.4)
+        self.assertEqual(calculate_min_win_rate(0.03, 0.02, 0.004), 0.48)
 
 if __name__ == "__main__":
     unittest.main()
