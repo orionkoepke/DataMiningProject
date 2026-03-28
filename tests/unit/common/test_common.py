@@ -218,6 +218,28 @@ class TestCreateTargetColumn(unittest.TestCase):
         self.assertEqual(result["target"].iloc[3], 0, "bar 3 is in last 3")
         self.assertEqual(result["target"].iloc[4], 0, "bar 4 is in last 3")
 
+    def test_max_bars_after_entry_limits_when_tp_later(self):
+        # Same path as test_take_profit_hit_on_later_bar: TP first at bar 4 (index 4).
+        # Exit window starts at bar 2; need bars 2,3,4 -> max_bars_after_entry must be >= 3.
+        df = _ohlcv(
+            "AAPL",
+            [
+                ("2025-01-02 09:31", 100, 100.5, 99.5, 100),  # bar 0
+                ("2025-01-02 09:32", 100, 100.5, 99.5, 100),  # bar 1: entry high=100.5
+                ("2025-01-02 09:33", 100.5, 101, 100, 100.5),  # bar 2
+                ("2025-01-02 09:34", 101, 101.5, 100.5, 101),  # bar 3
+                ("2025-01-02 09:35", 101, 102.02, 101, 101),  # bar 4: TP
+            ],
+        )
+        full = create_target_column(
+            df.copy(), take_profit=0.01, stop_loss=0.01, max_bars_after_entry=None
+        )
+        capped = create_target_column(
+            df.copy(), take_profit=0.01, stop_loss=0.01, max_bars_after_entry=2
+        )
+        self.assertEqual(full["target"].iloc[0], 1)
+        self.assertEqual(capped["target"].iloc[0], 0)
+
 
 class TestAddFeatureBarsUntilClose(unittest.TestCase):
     """Tests for add_feature_bars_until_close."""

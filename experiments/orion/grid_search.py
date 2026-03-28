@@ -29,6 +29,7 @@ def main() -> None:
         stop_loss=cfg.stop_loss,
         validation_fraction=cfg.validation_fraction,
         test_fraction=cfg.test_fraction,
+        target_max_bars_after_entry=cfg.target_max_bars_after_entry,
     )
 
     x_test = test_df.drop(columns=["target"])

@@ -1,7 +1,7 @@
 """Experiment-specific dataframe feature-engineering helpers (orion).
 
 Also includes the orion data pipeline: Alpaca fetch/cache, training table assembly,
-chronological split, z-scoring, and feature–target correlation helpers (used by
+chronological split, z-scoring, and feature–target correlation / mutual-information helpers (used by
 ``grid_search`` / ``feature_correlation``).
 """
 
@@ -11,6 +11,7 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import mutual_info_classif  # type: ignore[import-untyped]
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
 from lib.common.common import (
@@ -682,6 +683,11 @@ def print_orion_run_preamble(
     print(f"Date Range: {cfg.start_date} to {cfg.end_date}")
     print(f"Take Profit: {cfg.take_profit * 100}%")
     print(f"Stop Loss: {cfg.stop_loss * 100}%")
+    horizon = cfg.target_max_bars_after_entry
+    print(
+        "Target max bars after entry: "
+        f"{horizon if horizon is not None else 'unlimited (session only)'}"
+    )
     print(f"Trade Cost: {trade_cost * 100}%")
     print(
         "Break Even Win Rate (Percision): "
@@ -741,12 +747,17 @@ def create_orion_training_data(
     stop_loss: float,
     *,
     reference_bars: pd.DataFrame | None = None,
+    max_bars_after_entry: int | None = None,
 ) -> pd.DataFrame:
     """Build target + feature columns for the orion experiment schema."""
     col_names: list[str] = []
     col_names.append("target")
     data = create_target_column(
-        data, take_profit=take_profit, stop_loss=stop_loss, column_name=col_names[-1]
+        data,
+        take_profit=take_profit,
+        stop_loss=stop_loss,
+        column_name=col_names[-1],
+        max_bars_after_entry=max_bars_after_entry,
     )
     col_names.append("bars_until_close")
     data = add_feature_bars_until_close(data, column_name=col_names[-1])
@@ -754,8 +765,8 @@ def create_orion_training_data(
     data = add_feature_bars_since_open(data, column_name=col_names[-1])
     col_names.append("close_vwap_pct_diff")
     data = add_feature_close_vwap_pct_diff(data, column_name=col_names[-1])
-    rolling_windows = [2, 5, 10, 20, 30, 60, 90, 120, 180]
-    rsi_rolling_windows = [20, 40, 60, 90, 120, 180]
+    rolling_windows = [1, 2, 5, 10, 20, 30, 60, 120]
+    rsi_rolling_windows = [7, 14, 28]
     if reference_bars is not None:
         ref_syms = symbols_in_reference_bars(reference_bars)
         if ref_syms:
@@ -768,12 +779,12 @@ def create_orion_training_data(
     col_names.append("day_of_week")
     data = add_feature_day_of_week(data, column_name=col_names[-1])
     col_names.extend(f"volume_zscore_{w}" for w in rolling_windows)
-    col_names.extend(f"trade_count_zscore_{w}" for w in rolling_windows)
-    data = add_feature_volume_and_trade_count_zscore(data, rolling_windows)
+    data = add_feature_volume_zscore(data, rolling_windows)
     col_names.extend(f"pct_change_{b}" for b in rolling_windows)
     data = add_feature_pct_change_batch(data, rolling_windows)
-    col_names.extend(f"close_sma_{b}_pct_diff" for b in rolling_windows)
-    data = add_feature_close_sma_pct_diff(data, rolling_windows)
+    sma_rolling_windows = [9, 20, 50, 100]
+    col_names.extend(f"close_sma_{b}_pct_diff" for b in sma_rolling_windows)
+    data = add_feature_close_sma_pct_diff(data, sma_rolling_windows)
     col_names.extend(f"rsi_{b}" for b in rsi_rolling_windows)
     data = add_feature_rsi(data, rsi_rolling_windows)
     return data[col_names].copy()
@@ -862,6 +873,7 @@ def load_orion_training_frames(
     stop_loss: float,
     validation_fraction: float,
     test_fraction: float,
+    target_max_bars_after_entry: int | None = None,
     print_split: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Fetch/clean, build features, split, z-score. Returns ``(train_df, val_df, test_df)``."""
@@ -875,6 +887,7 @@ def load_orion_training_frames(
         take_profit=take_profit,
         stop_loss=stop_loss,
         reference_bars=reference_df,
+        max_bars_after_entry=target_max_bars_after_entry,
     )
 
     train_df, val_df, test_df = split_training_data(

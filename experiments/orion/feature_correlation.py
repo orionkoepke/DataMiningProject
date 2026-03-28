@@ -21,6 +21,7 @@ def main() -> None:
         stop_loss=cfg.stop_loss,
         validation_fraction=cfg.validation_fraction,
         test_fraction=cfg.test_fraction,
+        target_max_bars_after_entry=cfg.target_max_bars_after_entry,
     )
 
     print_feature_target_correlations(train_df, target_column="target", top_n=None)

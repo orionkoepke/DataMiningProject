@@ -32,6 +32,8 @@ def _targets_for_day_vectorized(
     n: int,
     take_profit: float,
     stop_loss: float,
+    *,
+    max_bars_after_entry: int | None = None,
 ) -> np.ndarray:
     """Fill target for each bar in the day (0 for last 3 bars). Returns array of length n."""
     out = np.zeros(n, dtype=np.int64)
@@ -48,8 +50,11 @@ def _targets_for_day_vectorized(
             continue
         sl_price = sl_prices[i]
         tp_price = tp_prices[i]
-        lows_seg = lows[i + 2 : n]
-        highs_seg = highs[i + 2 : n]
+        end = n
+        if max_bars_after_entry is not None:
+            end = min(n, i + 2 + max_bars_after_entry)
+        lows_seg = lows[i + 2 : end]
+        highs_seg = highs[i + 2 : end]
         hit_sl = lows_seg <= sl_price
         hit_tp = highs_seg >= tp_price
         first_sl = int(np.argmax(hit_sl)) if hit_sl.any() else len(lows_seg)
@@ -80,10 +85,12 @@ def create_target_column(
     stop_loss: float,
     *,
     column_name: str = "target",
+    max_bars_after_entry: int | None = None,
 ) -> pd.DataFrame:
     """
     Add a binary target column: 1 if a buy at the next bar's high would hit take_profit
-    before stop_loss and before end of trading day, else 0.
+    before stop_loss and before end of trading day, and (when set) within the next
+    ``max_bars_after_entry`` bars after the entry bar, else 0.
 
     Modifies data in place and returns it. Entry is assumed to be the next bar's high
     (we buy at that price). Exit is checked from the bar after that onward. The last 3
@@ -95,6 +102,9 @@ def create_target_column(
 
     Args:
         column_name: Name of the column to add (default "target").
+        max_bars_after_entry: If set, only bars this many positions after the entry bar
+            are considered for TP/SL (still capped by end of day). ``None`` means no extra
+            limit beyond the session.
     """
     targets = np.zeros(len(data), dtype=np.int64)
     trade_date = _trade_date_series(data)
@@ -102,7 +112,14 @@ def create_target_column(
 
     for locs, highs, lows, n in _iter_daily_ohlc(data, trade_date, symbol):
         base = _index_position(data, locs[0])
-        day_targets = _targets_for_day_vectorized(highs, lows, n, take_profit, stop_loss)
+        day_targets = _targets_for_day_vectorized(
+            highs,
+            lows,
+            n,
+            take_profit,
+            stop_loss,
+            max_bars_after_entry=max_bars_after_entry,
+        )
         targets[base : base + n] = day_targets
 
     data[column_name] = targets
