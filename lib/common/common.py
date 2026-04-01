@@ -126,6 +126,85 @@ def create_target_column(
     return data
 
 
+def _range_targets_for_day_vectorized(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    n: int,
+    take_profit: float,
+    stop_loss: float,
+    *,
+    max_bars_after_entry: int | None,
+) -> np.ndarray:
+    """Per-bar 0/1: 1 iff TP or SL is touched within the forward window; else 0.
+
+    The window is bars ``i+2`` … exclusive end, where end is ``min(n, i+2+max_bars_after_entry)``
+    when ``max_bars_after_entry`` is set, else ``n``. So label 0 if the session ends or the bar
+    cap is reached before either level trades.
+    """
+    out = np.zeros(n, dtype=np.int64)
+    num_entries = max(0, n - 3)
+    tp = float(take_profit)
+    sl = float(stop_loss)
+    for i in range(num_entries):
+        entry = float(highs[i + 1])
+        if not np.isfinite(entry) or entry <= 0:
+            continue
+        sl_price = entry * (1.0 - sl)
+        tp_price = entry * (1.0 + tp)
+        end = n
+        if max_bars_after_entry is not None:
+            end = min(n, i + 2 + max_bars_after_entry)
+        h = highs[i + 2 : end]
+        l = lows[i + 2 : end]
+        if h.size == 0:
+            continue
+        if (h >= tp_price).any() or (l <= sl_price).any():
+            out[i] = 1
+    return out
+
+
+def add_range_target_column(
+    data: pd.DataFrame,
+    take_profit: float,
+    stop_loss: float,
+    *,
+    column_name: str = "range_target",
+    max_bars_after_entry: int | None = None,
+) -> pd.DataFrame:
+    """Label 1 if TP or SL is touched after entry at the **next** bar's high within the window.
+
+    Label 0 if neither level is touched before the window ends. The window ends at the earlier
+    of: last bar of the session, or ``max_bars_after_entry`` bars after the entry bar (same
+    indexing as ``create_target_column``). If ``max_bars_after_entry`` is ``None``, only the
+    session end applies. Last three bars of the day and invalid entries are 0. Unlike
+    ``create_target_column`` (TP before SL), this is 1 if **either** level is touched (including
+    both on the same bar).
+    """
+    targets = np.zeros(len(data), dtype=np.int64)
+    trade_date = _trade_date_series(data)
+    symbol = data.index.get_level_values("symbol")
+
+    for (_sym, _date), group in data.groupby([symbol, trade_date], sort=False):
+        group = group.sort_index(level="timestamp")
+        locs = group.index
+        highs = group["high"].to_numpy(dtype=np.float64, copy=False)
+        lows = group["low"].to_numpy(dtype=np.float64, copy=False)
+        n = len(group)
+        base = _index_position(data, locs[0])
+        day_targets = _range_targets_for_day_vectorized(
+            highs,
+            lows,
+            n,
+            take_profit,
+            stop_loss,
+            max_bars_after_entry=max_bars_after_entry,
+        )
+        targets[base : base + n] = day_targets
+
+    data[column_name] = targets
+    return data
+
+
 def add_feature_bars_until_close(
     data: pd.DataFrame,
     *,
@@ -294,6 +373,7 @@ def evaluate_and_print(
     tp_count = int(cm[1, 1])
     fp_count = int(cm[0, 1])
     fn_count = int(cm[1, 0])
+    tn_count = int(cm[0, 0])
 
     pos_denom = tp_count + fn_count
     pred_pos_denom = tp_count + fp_count
@@ -304,10 +384,13 @@ def evaluate_and_print(
     print(f"Profitable Trades Taken (Recall): {tp_count:,}/{pos_denom:,} ({recall_pct:,.2f}%)")
     print(f"Win Rate (Precision): {tp_count:,}/{pred_pos_denom:,} ({precision_pct:,.2f}%)")
     print(f"Loss Rate: {fp_count:,}/{pred_pos_denom:,} ({loss_pct:,.2f}%)")
+    print(f"True Positives: {tp_count:,}/{pos_denom:,} ({100 * tp_count / pos_denom:.2f}%)")
+    print(f"True Negatives: {int(cm[0, 0]):,} / {len(y_test)} ({100 * int(cm[0, 0]) / len(y_test):.2f}%)")
+    print(f"Accuracy: {tn_count + tp_count:,} / {len(y_test):,} ({100 * (tp_count + tn_count) / len(y_test):.2f}%)")
     win_per = take_profit - cost
     loss_per = stop_loss + cost
     print(
-        f"Profit: {100 * ((tp_count * win_per) - (fp_count * loss_per)):,.2f}% "
+        f"Profit: {100 * (((tp_count + tn_count) * win_per) - ((fp_count + fn_count) * loss_per)):,.2f}% "
         f"of max possible {100 * (pos_denom * win_per):,.2f}%"
     )
 

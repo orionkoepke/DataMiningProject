@@ -20,6 +20,7 @@ from lib.common.common import (
     add_feature_bars_since_open,
     add_feature_bars_until_close,
     add_feature_pct_change_batch,
+    add_range_target_column,
     create_target_column,
 )
 
@@ -748,8 +749,14 @@ def create_orion_training_data(
     *,
     reference_bars: pd.DataFrame | None = None,
     max_bars_after_entry: int | None = None,
+    only_rows_hitting_tp_or_sl: bool = False,
 ) -> pd.DataFrame:
-    """Build target + feature columns for the orion experiment schema."""
+    """Build target + feature columns for the orion experiment schema.
+
+    When ``only_rows_hitting_tp_or_sl`` is True, drop rows where neither take-profit nor
+    stop-loss would trade within the forward window (same rule as ``add_range_target_column``).
+    Filtering runs after all features are computed so rolling indicators still see full history.
+    """
     col_names: list[str] = []
     col_names.append("target")
     data = create_target_column(
@@ -787,6 +794,16 @@ def create_orion_training_data(
     data = add_feature_close_sma_pct_diff(data, sma_rolling_windows)
     col_names.extend(f"rsi_{b}" for b in rsi_rolling_windows)
     data = add_feature_rsi(data, rsi_rolling_windows)
+    if only_rows_hitting_tp_or_sl:
+        tmp_col = "__tp_or_sl_touched"
+        add_range_target_column(
+            data,
+            take_profit,
+            stop_loss,
+            column_name=tmp_col,
+            max_bars_after_entry=max_bars_after_entry,
+        )
+        data = data.loc[data[tmp_col] == 1].drop(columns=[tmp_col])
     return data[col_names].copy()
 
 
@@ -875,6 +892,7 @@ def load_orion_training_frames(
     test_fraction: float,
     target_max_bars_after_entry: int | None = None,
     print_split: bool = True,
+    only_rows_hitting_tp_or_sl: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Fetch/clean, build features, split, z-score. Returns ``(train_df, val_df, test_df)``."""
     raw_df = pull_and_clean(symbol, start_date, end_date)
@@ -888,6 +906,7 @@ def load_orion_training_frames(
         stop_loss=stop_loss,
         reference_bars=reference_df,
         max_bars_after_entry=target_max_bars_after_entry,
+        only_rows_hitting_tp_or_sl=only_rows_hitting_tp_or_sl,
     )
 
     train_df, val_df, test_df = split_training_data(

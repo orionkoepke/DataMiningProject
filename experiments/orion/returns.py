@@ -147,11 +147,11 @@ def print_trade_every_minute_summary(
 
 def main() -> None:
     # Local run parameters (edit here; this script does not use experiments.orion.config).
-    SYMBOL = "TQQQ"
+    SYMBOL = "MARA"
     START_DATE = datetime(2022, 1, 1)
     END_DATE = datetime(2025, 12, 31)
-    TAKE_PROFIT = 0.02
-    STOP_LOSS = 0.01
+    TAKE_PROFIT = 0.03
+    STOP_LOSS = 0.03
     MAX_BARS_AFTER_ENTRY = 90
 
     bars = pull_and_clean(SYMBOL, START_DATE, END_DATE)
