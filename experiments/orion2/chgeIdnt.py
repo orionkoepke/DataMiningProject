@@ -331,20 +331,20 @@ if __name__ == "__main__":
     # )
     # print_test_results("Naive Bayes", y_test, nb_clf.predict(x_test))
 
-    # knn_clf = train_knn(
-    #     train_df,
-    #     val_df,
-    #     target_column=TARGET_COLUMN,
-    #     param_grid={
-    #         "n_neighbors": [5, 15, 31],
-    #         "weights": ["uniform", "distance"],
-    #         "p": [1, 2],
-    #     },
-    #     scoring="f1",
-    #     verbose=True,
-    #     grid_n_jobs=1,
-    # )
-    # print_test_results("K-nearest neighbors", y_test, knn_clf.predict(x_test))
+    knn_clf = train_knn(
+        train_df,
+        val_df,
+        target_column=TARGET_COLUMN,
+        param_grid={
+            "n_neighbors": [5, 15, 31],
+            "weights": ["uniform", "distance"],
+            "p": [1, 2],
+        },
+        scoring="f1",
+        verbose=True,
+        grid_n_jobs=1,
+    )
+    print_test_results("K-nearest neighbors", y_test, knn_clf.predict(x_test))
 
     forest_clf = train_forest(
         train_df,
@@ -397,7 +397,7 @@ if __name__ == "__main__":
     models: list[tuple[str, Any]] = [
         # ("Decision tree", tree_clf),
         # ("Naive Bayes", nb_clf),
-        # ("K-nearest neighbors", knn_clf),
+        ("K-nearest neighbors", knn_clf),
         ("Random forest", forest_clf),
         ("XGBoost", xgb_clf),
         ("Neural network (MLP)", mlp_clf),
